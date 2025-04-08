@@ -1,0 +1,43 @@
+name: Test Darktrace Scanners
+
+on: push
+
+jobs:
+  mock-tf-apply:
+    name: Mock Tofu Apply
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "14"
+      - uses: opentofu/setup-opentofu@v1
+
+      - name: init
+        run: tofu init
+
+      - name: apply
+        run: tofu apply --auto-approve --state-out=output.json
+
+      - name: Upload Tofu State Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-state
+          path: output.json
+
+  test-terraform-linking:
+    uses: ./.github/workflows/test-iac-scanner-template.yml
+    needs: mock-tf-apply
+    with:
+      scanner_image: ghcr.io/darktrace-testing/dt-terraform-linking:latest
+      download_artifacts_of: tofu-state
+      run_cmd: git config --global --add safe.directory '*' && /main --output output.json
+      artifact_names: "output.json darktrace-scanner/"
+    secrets:
+      username: ${{ github.actor }}
+      password: ${{ secrets.github_token }}
+      dt_client_id: ${{ secrets.darktrace_client_id }}
+      dt_client_secret: ${{ secrets.darktrace_client_secret }}
+      dt_jwks_url: ${{ secrets.darktrace_jwks_server_url }}
+      dt_service_url: ${{ secrets.darktrace_service_url }}
+

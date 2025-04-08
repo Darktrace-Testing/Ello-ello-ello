@@ -1,0 +1,144 @@
+name: Test Darktrace IaC Scanners
+
+on:
+  workflow_call:
+    inputs:
+      scanner_image:
+        type: string
+        required: true
+      run_cmd:
+        type: string
+        required: true
+      artifact_names:
+        type: string
+        required: true
+      download_artifacts_of:
+        type: string
+    secrets:
+      username:
+        description: "Container registry username"
+        required: true
+      password:
+        description: "Container registry password"
+        required: true
+      dt_jwks_url:
+        required: true
+      dt_service_url:
+        required: true
+      dt_client_id:
+        required: true
+      dt_client_secret:
+        required: true
+
+jobs:
+  test-scan:
+    name: Test Darktrace Scanner
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ inputs.scanner_image }}
+      options: --user root
+      credentials:
+        username: ${{ secrets.username }}
+        password: ${{ secrets.password }}
+      env:
+        DARKTRACE_JWKS_SERVER_URL: ${{ secrets.dt_jwks_url }}
+        DARKTRACE_SERVICE_URL: ${{ secrets.dt_service_url }}
+        DARKTRACE_CLIENT_ID: ${{ secrets.dt_client_id }}
+        DARKTRACE_CLIENT_SECRET: ${{ secrets.dt_client_secret }}
+        DARKTRACE_SCANNER_DEBUG: true
+        # For DT Terraform linking
+        AWS_ACCESS_KEY: sshhh
+        AWS_SECRET_KEY: ssshh
+        AWS_ENDPOINT_URL: http://localstack:4566
+    services:
+      localstack:
+        image: localstack/localstack
+        env:
+          DEBUG: 0
+        ports:
+          - 4566:4566
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        if: inputs.download_artifacts_of != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.download_artifacts_of }}
+          path: .
+
+      - name: Test scanner
+        run: |
+          exit_code=0
+          ${{ inputs.run_cmd }} > output.log 2>&1 || exit_code=$?
+
+          if [ $exit_code -eq 0 ]; then
+            echo "✅ Scan ran successfully"
+            exit 0
+          fi
+
+          cat output.log
+          echo -e "\n\n"
+
+          if [ $exit_code -eq 1 ]; then
+            echo "❌ Scan ran successfully but didn't honour the allow failure configuration"
+            exit 1
+          fi
+
+          if [ $exit_code -eq 2 ]; then
+            echo "❌ Error occurred in the scanner execution, please send the ${LOG_ARTIFACT} job artifact to ${SUPPORT_EMAIL} for support"
+            exit 1
+          fi
+
+          if [ $exit_code -eq 3 ]; then
+            echo "❌ Error occurred in communication with Darktrace API, please send the ${LOG_ARTIFACT} job artifact to ${SUPPORT_EMAIL} for support"
+            exit 1
+          fi
+
+          echo "❌ Unknown exit status, please send the ${LOG_ARTIFACT} job artifact to ${SUPPORT_EMAIL} for support"
+          exit 1
+
+      - name: Compute artifact paths
+        id: compute-paths
+        run: |
+          paths=$(echo "${{ inputs.artifact_names }}" | tr ' ' '\n')
+          echo $paths
+          echo "ARTIFACT_PATHS<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$paths" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-scan-artifacts
+          retention-days: 30
+          path: ${{ steps.compute-paths.outputs.ARTIFACT_PATHS }}
+
+  test-outputs:
+    name: Test outputs
+    runs-on: ubuntu-latest
+    needs: test-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: test-scan-artifacts
+
+      - name: Validate artifacts
+        run: |
+          for output_item in ${{ inputs.artifact_names }}; do
+            if [[ -d "${output_item}" ]]; then
+              if [[ ! -d "${output_item}" ]]; then
+                echo "Error: Directory ${output_item} does not exist."
+                exit 1
+              fi
+            elif [[ ! -s "${output_item}" ]]; then
+              echo "Error: ${output_item} does not exist or is empty."
+              exit 1
+            fi
+          done
+

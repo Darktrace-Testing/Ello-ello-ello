@@ -1,0 +1,20 @@
+name: Test Darktrace Scanners
+
+on: push
+
+jobs:
+  test-dt-kics:
+    name: Validate Darktrace Kics
+    uses: ./.github/workflows/test-iac-scanner-template.yml
+    with:
+      scanner_image: ghcr.io/darktrace-testing/dt-kics:latest
+      run_cmd: /docker-entrypoint.sh
+      artifact_names: "gl-sast-report.json darktrace-scanner/"
+    secrets:
+      username: ${{ github.actor }}
+      password: ${{ secrets.github_token }}
+      dt_client_id: ${{ secrets.darktrace_client_id }}
+      dt_client_secret: ${{ secrets.darktrace_client_secret }}
+      dt_jwks_url: ${{ secrets.darktrace_jwks_server_url }}
+      dt_service_url: ${{ secrets.darktrace_service_url }}
+
