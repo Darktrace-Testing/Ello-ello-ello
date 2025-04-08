@@ -38,6 +38,6 @@ jobs:
       password: ${{ secrets.github_token }}
       dt_client_id: ${{ secrets.darktrace_client_id }}
       dt_client_secret: ${{ secrets.darktrace_client_secret }}
-      dt_jwks_url: ${{ secrets.darktrace_jwks_server_url }}
-      dt_service_url: ${{ secrets.darktrace_service_url }}
+      dt_jwks_url: ${{ vars.darktrace_jwks_server_url }}
+      dt_service_url: ${{ vars.darktrace_service_url }}
 
